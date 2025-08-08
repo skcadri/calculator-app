@@ -33,6 +33,9 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
     <script>
         // Calculator functionality
@@ -120,6 +123,7 @@
 
         // Three.js 3D Scene
         let scene, camera, renderer, controls;
+        let composer, renderPass, bloomPass;
         let calculatorGroup;
         let calculatorButtons = [];
         let displayTextMesh;
@@ -147,8 +151,20 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.physicallyCorrectLights = true;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.2;
+            renderer.toneMappingExposure = 1.25;
             container.appendChild(renderer.domElement);
+
+            // Post-processing (subtle cinematic bloom)
+            composer = new THREE.EffectComposer(renderer);
+            renderPass = new THREE.RenderPass(scene, camera);
+            composer.addPass(renderPass);
+            bloomPass = new THREE.UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                0.35, // strength
+                0.6,  // radius
+                0.0   // threshold
+            );
+            composer.addPass(bloomPass);
             
             // Raycaster for interaction
             raycaster = new THREE.Raycaster();
@@ -239,11 +255,11 @@
             const bodyGeometry = new THREE.ExtrudeGeometry(bodyShape, extrudeSettings);
             const bodyMaterial = new THREE.MeshPhysicalMaterial({
                 color: 0x2c2c2c,
-                metalness: 0.15,
-                roughness: 0.25,
+                metalness: 0.2,
+                roughness: 0.22,
                 clearcoat: 0.9,
-                clearcoatRoughness: 0.1,
-                reflectivity: 0.3
+                clearcoatRoughness: 0.08,
+                reflectivity: 0.35
             });
             
             const calcBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
@@ -252,10 +268,28 @@
             calcBody.castShadow = true;
             calcBody.receiveShadow = true;
             calculatorGroup.add(calcBody);
+
+            // Chamfered top frame inset for realism
+            const frameGeometry = new THREE.BoxGeometry(width - 0.25, 0.04, height - 0.25);
+            const frameMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0x1f1f1f,
+                metalness: 0.25,
+                roughness: 0.35,
+                clearcoat: 0.4,
+                clearcoatRoughness: 0.2
+            });
+            const topFrame = new THREE.Mesh(frameGeometry, frameMaterial);
+            topFrame.position.set(0, 0.39, 0);
+            topFrame.receiveShadow = true;
+            calculatorGroup.add(topFrame);
             
             // Create recessed display area
             createDisplayArea();
             
+            // Branding badge and power LED
+            createBranding();
+            createPowerLED();
+
             // Create flush buttons
             createFlushButtons();
             
@@ -290,9 +324,9 @@
             // LED display screen (flush with recess)
             const displayScreenGeometry = new THREE.BoxGeometry(3.6, 0.02, 1);
             const displayScreenMaterial = new THREE.MeshPhysicalMaterial({
-                color: 0x000000,
+                color: 0x020202,
                 emissive: 0x001a00,
-                emissiveIntensity: 0.1,
+                emissiveIntensity: 0.15,
                 metalness: 0,
                 roughness: 0.1,
                 transmission: 0.05,
@@ -302,6 +336,19 @@
             displayScreen.position.set(0, 0.36, 2.4);
             calculatorGroup.add(displayScreen);
             
+            // Thin glass border around screen
+            const bezelGeometry = new THREE.BoxGeometry(3.7, 0.022, 1.05);
+            const bezelMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0x121212,
+                metalness: 0.6,
+                roughness: 0.4,
+                clearcoat: 1,
+                clearcoatRoughness: 0.15
+            });
+            const bezel = new THREE.Mesh(bezelGeometry, bezelMaterial);
+            bezel.position.set(0, 0.361, 2.4);
+            calculatorGroup.add(bezel);
+
             // Create the display text (flush with screen)
             createDisplayText();
         }
@@ -317,14 +364,14 @@
             context.fillRect(0, 0, canvas.width, canvas.height);
             
             // Set font and style
-            context.font = 'bold 120px "Courier New", monospace';
-            context.fillStyle = '#00ff00';
+            context.font = 'bold 120px "Segment7Standard", "Courier New", monospace';
+            context.fillStyle = '#6BFF6B';
             context.textAlign = 'right';
             context.textBaseline = 'middle';
             
             // Add subtle glow effect
-            context.shadowColor = '#00ff00';
-            context.shadowBlur = 20;
+            context.shadowColor = '#00ff88';
+            context.shadowBlur = 24;
             
             // Draw text
             const text = displayValue.length > 10 ? displayValue.substring(0, 10) : displayValue;
@@ -336,8 +383,8 @@
             const textMaterial = new THREE.MeshBasicMaterial({ 
                 map: texture, 
                 transparent: true,
-                emissive: 0x003300,
-                emissiveIntensity: 0.2
+                opacity: 1,
+                depthWrite: false
             });
             const textGeometry = new THREE.PlaneGeometry(3.5, 0.9);
             
@@ -373,12 +420,12 @@
             ];
             
             const buttonColors = {
-                'clear': { color: 0x4a4a4a, label: '#ffffff' },
-                'delete': { color: 0x4a4a4a, label: '#ffffff' },
-                '/': { color: 0x666666, label: '#ffffff' },
-                '*': { color: 0x666666, label: '#ffffff' },
-                '-': { color: 0x666666, label: '#ffffff' },
-                '+': { color: 0x666666, label: '#ffffff' },
+                'clear': { color: 0x3f3f3f, label: '#ffffff' },
+                'delete': { color: 0x3f3f3f, label: '#ffffff' },
+                '/': { color: 0x5c5c5c, label: '#ffffff' },
+                '*': { color: 0x5c5c5c, label: '#ffffff' },
+                '-': { color: 0x5c5c5c, label: '#ffffff' },
+                '+': { color: 0x5c5c5c, label: '#ffffff' },
                 'equals': { color: 0xff9500, label: '#ffffff' },
                 'default': { color: 0x5a5a5a, label: '#ffffff' }
             };
@@ -423,10 +470,10 @@
                     const buttonSurfaceGeometry = new THREE.BoxGeometry(buttonWidth - 0.05, 0.02, buttonDepth - 0.05);
                     const buttonSurfaceMaterial = new THREE.MeshPhysicalMaterial({
                         color: colors.color,
-                        metalness: 0.2,
-                        roughness: 0.4,
-                        clearcoat: 0.3,
-                        clearcoatRoughness: 0.2
+                        metalness: 0.25,
+                        roughness: 0.38,
+                        clearcoat: 0.4,
+                        clearcoatRoughness: 0.18
                     });
                     const buttonSurface = new THREE.Mesh(buttonSurfaceGeometry, buttonSurfaceMaterial);
                     buttonSurface.position.set(xPos, 0.36, zPos);
@@ -472,6 +519,43 @@
                     calculatorButtons.push(buttonSurface);
                 }
             }
+        }
+
+        // Branding badge at the bottom left
+        function createBranding() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 512; canvas.height = 128;
+            ctx.fillStyle = 'rgba(0,0,0,0)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.font = 'bold 72px Poppins, Arial';
+            ctx.fillStyle = '#e6e6e6';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('CALC • PRO', 20, canvas.height / 2);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+            const geo = new THREE.PlaneGeometry(1.8, 0.35);
+            const mesh = new THREE.Mesh(geo, material);
+            mesh.position.set(-1.6, 0.371, -2.8);
+            mesh.rotation.x = -Math.PI / 2;
+            calculatorGroup.add(mesh);
+        }
+
+        // Small power LED indicator (soft glow)
+        function createPowerLED() {
+            const ledGeo = new THREE.SphereGeometry(0.04, 16, 16);
+            const ledMat = new THREE.MeshStandardMaterial({
+                color: 0x00ff7f,
+                emissive: 0x00ff7f,
+                emissiveIntensity: 0.6,
+                metalness: 0.1,
+                roughness: 0.4
+            });
+            const led = new THREE.Mesh(ledGeo, ledMat);
+            led.position.set(1.9, 0.382, -2.9);
+            calculatorGroup.add(led);
         }
 
         function onMouseMove(event) {
@@ -539,13 +623,14 @@
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
-            renderer.render(scene, camera);
+            composer.render();
         }
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
         }
 
         // Keyboard support
